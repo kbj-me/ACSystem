@@ -3,7 +3,34 @@
 #include <vector>
 #include <windows.h>
 #include <queue>
+#include <thread>
+#include <psapi.h>
 #include "acsdef.h"
+SIZE_T pWorkingSetSize = 0;
+bool monitoring = false;
+void monitorMemory(HANDLE handle) 
+{
+	DWORD exitCode;
+	GetExitCodeProcess(handle, &exitCode);
+	PROCESS_MEMORY_COUNTERS p;
+	while(exitCode == STILL_ACTIVE)
+	{
+		monitoring = true;
+		GetExitCodeProcess(handle, &exitCode);
+		GetProcessMemoryInfo(handle,&p,sizeof(p));
+		pWorkingSetSize = std::max(p.WorkingSetSize,pWorkingSetSize);
+	}
+	monitoring = false;
+}
+void outputMemory()
+{
+	while(monitoring)
+	{
+		Sleep(1000);
+		std::cout<<"Child process memory used(Bytes) :　"<<pWorkingSetSize<<std::endl;
+	}
+	std::cout<<"Child process died !"<<std::endl;
+}
 long id = 0;
 long idp()
 {
@@ -36,9 +63,10 @@ TestingRequest getRequest(std::string code,int questionCount)
 	request.id = idp();
 	return request;
 }
-int execCommand(const std::string& cmd, const std::string& input = "" , const std::string& answer = "",int timelimit = 0) 
+int execCommand(const std::string& cmd, const std::string& input = "" , const std::string& answer = "",int timelimit = 0,SIZE_T memlimit = 0) 
 {
 	std::cout<<"Time limit : "<<timelimit<<std::endl;
+	std::cout<<"Memory limit : "<<memlimit<<std::endl;
 	// 管道1：子进程输出 → 父进程读取（hChildOutWrite 子进程写，hParentInRead 父进程读）
 	HANDLE hParentInRead, hChildOutWrite;
 	// 管道2：父进程输入 → 子进程读取（hParentOutWrite 父进程写，hChildInRead 子进程读）
@@ -123,9 +151,21 @@ int execCommand(const std::string& cmd, const std::string& input = "" , const st
 	
 	// 读取子进程的输出
 	
-	
+	std::thread memoryMonitor (monitorMemory,pi.hProcess);
+	memoryMonitor.detach();
+	std::thread memoryOutput (outputMemory);
+	memoryOutput.detach();
 	// 等待子进程结束，释放资源
 	WaitForSingleObject(pi.hProcess, timelimit);
+	if(pWorkingSetSize>memlimit)
+	{
+		if(TerminateProcess(pi.hProcess,10000)!=0)
+		{
+			std::cout<<"TerminateProcess() to Child process (MLE)!"<<std::endl;
+			return MEMORY_LIMIT_ERROR;
+		}
+		
+	}
 	DWORD exitCode;
 	if (!GetExitCodeProcess(pi.hProcess, &exitCode)) 
 	{
@@ -138,7 +178,7 @@ int execCommand(const std::string& cmd, const std::string& input = "" , const st
 		std::cout<<"Child process can't exit!"<<std::endl;
 		if(TerminateProcess(pi.hProcess,10000)!=0)
 		{
-			std::cout<<"TerminateProcess() to Child process!"<<std::endl;
+			std::cout<<"TerminateProcess() to Child process (TLE)!"<<std::endl;
 			return TIME_LIMIT_ERROR;
 		}
 		return ACSRUNTIME_ERROR;
@@ -311,16 +351,18 @@ int handleRequest(TestingRequest request,std::string commandptr,std::string temp
 		for(int i = 0 ; i< testPointCount ; i++)
 		{
 			std::cout<<"Testing point : "<<i<<std::endl;
-			int timelimit;
+			int timelimit,memlimit;
 			try
 			{
+				memlimit = std::stoi(getTestPoint(answer1,request.questionCount,i,".memlimit"));
 				timelimit = std::stoi(getTestPoint(answer1,request.questionCount,i,".tlimit"));
 			}catch(const std::exception&)
 			{
 				return ILLEGAL_TESTING_POINT;
 			}
 			std::cout<<"Time limit : "<<timelimit<<std::endl;
-			int flag = execCommand(tempStrptr+"\\source.exe",getTestPoint(answer1,request.questionCount,i,".tpin"),getTestPoint(answer1,request.questionCount,i,".tpout"),timelimit);
+			std::cout<<"Memory limit(MB) : "<<memlimit<<std::endl;
+			int flag = execCommand(tempStrptr+"\\source.exe",getTestPoint(answer1,request.questionCount,i,".tpin"),getTestPoint(answer1,request.questionCount,i,".tpout"),timelimit,(SIZE_T)memlimit*1048576);
 			if(flag!=ANSWER_CORRECT){return flag;}
 		}
 		std::string cmd = tempStrptr+"\\source.exe";
@@ -356,9 +398,13 @@ int main()
 		case TIME_LIMIT_ERROR:
 			std::cout<<"Time Limit Error !"<<std::endl;
 			break;
+		case MEMORY_LIMIT_ERROR:
+			std::cout<<"Memory Limit Error !"<<std::endl;
+		break;
 		default:
 			break;
 	}
+	Sleep(1000);
 	system("pause");
 	return 0;
 }
