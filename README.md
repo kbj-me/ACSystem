@@ -13,7 +13,7 @@ Answer-Checkig System by kbj-me with cpp
 
  ![项目演示](https://github.com/kbj-me/ACSystem/blob/main/help/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE%202025-11-28%20211051.png)
  
-> 0代表第一个子测试点 其是0到测试点id 0.memlimit代表内存限制（WIP） 0.tlimit代表时间限制（毫秒） 0.tpin和0.tpout代表输入输出 可以换行之类的
+> 0代表第一个子测试点 其是0到测试点id 0.memlimit代表内存限制 ~~（WIP）~~  已经制作完成了！(MB) 0.tlimit代表时间限制（毫秒） 0.tpin和0.tpout代表输入输出 可以换行之类的
 #### 可以用示例开盖即食
 
 
